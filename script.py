@@ -2,13 +2,8 @@ import tkinter as tk
 from tkinter import scrolledtext
 import subprocess
 
-RECOGNIZED_CMDLETS = ["get", "set", "clear", "new", "add", "remove"]
-
 def execute_command():
-    # Extract the command input after the prompt
     command = output_box.get("prompt_end", "input_end").strip()
-
-    # Handle the 'clear' command separately
     if command.lower() == "clear":
         output_box.delete(1.0, tk.END)
         display_prompt()
@@ -16,48 +11,50 @@ def execute_command():
 
     try:
         result = subprocess.run(["powershell", "-Command", command], text=True, capture_output=True)
-
-        # Display stdout
         if result.stdout:
             output_box.insert("input_end", '\n' + result.stdout)
             output_box.mark_set("input_end", tk.INSERT)
 
-        # Display stderr
         if result.stderr:
             start_index = output_box.index("input_end+1c linestart")
             output_box.insert("input_end", '\n' + result.stderr)
-            end_index = output_box.index(tk.INSERT)
-            output_box.tag_add("error", start_index, end_index)
-            output_box.tag_configure("error", foreground="red", background="black")
+            format_stderr(result.stderr, start_index)
             output_box.mark_set("input_end", tk.INSERT)
 
-        # Insert a newline for separation
-        output_box.insert(tk.END, '\n')
-
+        if not result.stdout and not result.stderr:
+            output_box.insert("input_end", '\n')
     except Exception as e:
         start_index = output_box.index("input_end+1c linestart")
         output_box.insert(tk.END, str(e) + '\n')
         end_index = output_box.index(tk.END + "-1c")
         output_box.tag_add("error", start_index, end_index)
-        output_box.tag_configure("error", foreground="red", background="black")
 
     display_prompt()
 
+def format_stderr(stderr_text, start_index):
+    lines = stderr_text.split('\n')
+    for line in lines:
+        # Mark everything up to the newline (or end of the line) with the error tag
+        end_of_content = output_box.search('\n', start_index, stopindex=tk.END) or output_box.index(f"{start_index} lineend")
+        output_box.tag_add("error", start_index, end_of_content)
+
+        # If there's a newline, mark the rest of the line with the blue_background tag
+        if output_box.get(end_of_content) == '\n':
+            line_end = output_box.index(f"{end_of_content} lineend")
+            output_box.tag_add("blue_background", end_of_content, line_end)
+
+        # Move to the next line
+        start_index = f"{line_end}+1c"
+
 def display_prompt():
-    # Insert the prompt.
     output_box.insert(tk.END, "PS C:\\Users\\Administrator> ")
     output_box.mark_set("prompt_end", "end-2c lineend")
     output_box.mark_set("input_end", tk.END)
     output_box.mark_gravity("prompt_end", "left")
     output_box.see(tk.END)
 
-
 def on_enter_key(event):
-    first_word = output_box.get("prompt_end", "prompt_end wordend").strip()
-    if first_word.lower() in RECOGNIZED_CMDLETS:
-        output_box.tag_add("cmdlet", "prompt_end", "prompt_end wordend")
-        output_box.tag_configure("cmdlet", foreground="yellow")
-
+    output_box.tag_remove("first_word", "input_end", "input_end")
     execute_command()
     return 'break'
 
@@ -70,18 +67,44 @@ def enforce_prompt_readonly(event):
         output_box.mark_set(tk.INSERT, "input_end")
     else:
         output_box.mark_set("input_end", tk.INSERT)
+    color_first_word(event) 
+
+def color_first_word(event):
+    output_box.tag_remove("first_word", "prompt_end", "input_end")
+    
+    first_word_end = output_box.search(" ", "prompt_end", "input_end", regexp=True) or output_box.search("\n", "prompt_end", "input_end")
+    
+    if not first_word_end:
+        first_word_end = output_box.index("input_end")
+    
+    output_box.tag_add("first_word", "prompt_end", first_word_end)
+    output_box.tag_configure("first_word", foreground="yellow")
 
 root = tk.Tk()
 root.title("Administrator: Windows PowerShell")
+bg_color = '#012456'
+cursor_color = '#fedcba'
+root.configure(bg=bg_color)
 root.iconbitmap('powershell.ico')
-root.configure(bg='#012456')
-
-output_box = scrolledtext.ScrolledText(root, bg='#012456', fg='white', wrap=tk.WORD, font=("Consolas", 10), borderwidth=0, relief="flat", insertbackground='white', insertwidth=8)
+output_box = scrolledtext.ScrolledText(
+    root, 
+    bg=bg_color, 
+    fg='white', 
+    wrap=tk.WORD, 
+    font=("Consolas", 10),
+    borderwidth=0,
+    relief="flat",
+    insertbackground=cursor_color,
+    insertwidth=7,
+    insertontime=0,
+    insertofftime=0
+)
 output_box.pack(fill=tk.BOTH, expand=True)
 output_box.bind('<Return>', on_enter_key)
 output_box.bind('<KeyPress>', enforce_prompt_readonly)
-
+output_box.bind('<KeyRelease>', color_first_word)
 output_box.insert(tk.END, "Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n")
 display_prompt()
-
+output_box.tag_configure("error", foreground="red", background="black")
+output_box.tag_configure("blue_background", background="blue")
 root.mainloop()
