@@ -9,8 +9,9 @@ def execute_command():
         display_prompt()
         return
 
+    docker_command = f"docker exec powershell-container powershell -Command {command}"
     try:
-        result = subprocess.run(["powershell", "-Command", command], text=True, capture_output=True)
+        result = subprocess.run(docker_command, shell=True, text=True, capture_output=True)
         if result.stdout:
             output_box.insert("input_end", '\n' + result.stdout)
             output_box.mark_set("input_end", tk.INSERT)
